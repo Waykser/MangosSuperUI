@@ -165,9 +165,14 @@ public static class GroupCoordinator
         foreach (var group in groups.GetAllGroups())
         {
             // Resolve member guids -> live contexts; skip any without a connected context.
+            // [AUTHORSHIP] Also skip bodies a human is driving — a possessed bot, or one of the
+            // owner's own characters enrolled as a companion. Counting one into a fleet group
+            // would hand it a shared objective and a focus-fire directive it must never receive,
+            // and would let it satisfy the >=2 quorum that makes the OTHER members act as a team.
+            // The None pass above already reset their two seams, so skipping here leaves them solo.
             var members = new List<BotContext>(group.MemberGuids.Count);
             foreach (var guid in group.MemberGuids)
-                if (contexts.TryGetValue(guid, out var ctx))
+                if (contexts.TryGetValue(guid, out var ctx) && !ctx.IsPlayerDriven)
                     members.Add(ctx);
 
             // Need >=2 PRESENT members to act as a team; otherwise leave None (solo).

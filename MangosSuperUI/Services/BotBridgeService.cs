@@ -174,6 +174,22 @@ public class BotStatePayload
     // continuously-maintained mirror of the core log — never a request/reply cache that can go stale/partial.
     [JsonPropertyName("quests")]
     public string Quests { get; set; } = "";
+
+    // [AUTHORSHIP] Who is driving this body. C++ has sent `possessed` since SuiPossess
+    // shipped — with a comment saying the brain stands down on it — but nothing here ever
+    // read it, so the brain has been planning for possessed bots all along. Both flags are
+    // 0/1 (C++ %u) and ABSENT on an older binary, which defaults them to 0 = "the brain
+    // owns this bot", i.e. exactly the pre-existing behaviour.
+    //
+    //   possessed — transient: a real player's client is driving this body right now.
+    //   companion — durable:  this is one of the owner's own characters (.sui companion add).
+    //
+    // Either one means the brain must not plan for it. See BotBrainService.RunBrainTicksAsync.
+    [JsonPropertyName("possessed")]
+    public uint Possessed { get; set; } = 0;
+
+    [JsonPropertyName("companion")]
+    public uint Companion { get; set; } = 0;
 }
 
 public class BotEventPayload
@@ -355,6 +371,14 @@ public class BotState
     public DateTime? HubErrandUntil { get; set; }
     // Full quest-log snapshot pushed on STATE (retired pull). Pipe-delimited, QUEST_STATUS_ALL format.
     public string Quests { get; set; } = "";
+    // [AUTHORSHIP] Someone other than the brain is driving this body: a real player's client
+    // (Possessed) or its owner via the companion commands (IsCompanion). Either way the brain
+    // must sense but never plan — see BotBrainService.RunBrainTicksAsync. Also the reason the
+    // outbound command senders refuse: a command aimed at one of these is a bug upstream.
+    public bool Possessed { get; set; } = false;
+    public bool IsCompanion { get; set; } = false;
+    /// True when this body answers to a human rather than the brain.
+    public bool IsPlayerDriven => Possessed || IsCompanion;
     // BotState class — add:
     public bool HasReceivedState { get; set; } = false;
 }
@@ -672,6 +696,8 @@ public class BotBridgeService : BackgroundService
         bs.InPlayerParty = state.Pparty != 0;   // [PLAYERPARTY] pparty on STATE (2026-07-07)
         bs.PartyBossDist = state.Ppdist;        // [HUB-ERRAND] ppdist on STATE (2026-07-08); HubErrandUntil deliberately NOT copied — it persists
         bs.Quests = state.Quests;   // full quest-log snapshot (retired pull → STATE is the single source of truth)
+        bs.Possessed = state.Possessed != 0;    // [AUTHORSHIP] a real client is driving this body
+        bs.IsCompanion = state.Companion != 0;  // [AUTHORSHIP] one of the owner's own characters
         bs.HasReceivedState = true;
 
         BotStates[conn.Guid] = bs;
@@ -1035,6 +1061,20 @@ public class BotBridgeService : BackgroundService
         if (!Connections.TryGetValue(guid, out var conn))
         {
             _logger.LogWarning("BotBridge: cannot send {Type} — bot {Guid} not connected", type, guid);
+            return;
+        }
+
+        // [AUTHORSHIP] Refuse anything aimed at a body a human is driving: a possessed bot, or
+        // one of the owner's own characters (.sui companion add). C++ drops these too
+        // (POSSESSED_DROP / COMPANION_DROP), but arriving-and-dropped is not the same as never
+        // sent — the supervisor has already armed a deadline on the command, and the drop
+        // surfaces later as a stall on a bot that was simply being played. Every outbound
+        // command funnels through here, so this one gate covers all of them.
+        // PING is exempt on both sides: it is liveness, not instruction.
+        if (type != "PING" && BotStates.TryGetValue(guid, out var authState) && authState.IsPlayerDriven)
+        {
+            _logger.LogDebug("BotBridge: refusing {Type} to {Guid} — {Why}",
+                type, guid, authState.IsCompanion ? "companion" : "possessed");
             return;
         }
 

@@ -10,6 +10,8 @@
 > 
 > **Compatibility names:** Internal settings and database identifiers such as `Vmangos:*` and `vmangos_admin`, plus existing `/vmangos/` directory examples, are legacy application names. Keep them unchanged when following this guide.
 
+> **Already installed and adding companions?** Running your own characters alongside you as party companions is a separate, additive feature with its own setup — one game account per companion, and no schema changes. See **[`INSTALL_COMPANIONS.md`](INSTALL_COMPANIONS.md)**.
+
 ---
 
 ## Part 1: SuperUI-Core Prerequisites

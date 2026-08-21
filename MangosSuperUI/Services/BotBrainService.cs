@@ -719,6 +719,20 @@ public class BotBrainService : BackgroundService
 
             var snap = BotStateSnapshot.FromBridgeState(bs);
 
+            // [AUTHORSHIP] This body answers to a human — a real client is driving it, or it is
+            // one of the owner's own characters (.sui companion add). SENSE it so the dashboard,
+            // FleetReport and the fall recorder keep showing live position and health, but never
+            // PLAN for it: a goal issued here would march someone's character off to grind while
+            // they were playing it. C++ drops such commands too (COMPANION_DROP / POSSESSED_DROP),
+            // but the brain should not be sending them in the first place — a dropped command
+            // still burns a supervisor deadline and reads downstream as a stall.
+            if (snap.IsPlayerDriven)
+            {
+                kvp.Value.Sense(snap);
+                _fallRecorder.Observe(kvp.Value);
+                continue;
+            }
+
             if (_brainEnabled)
                 await _driver.TickAsync(kvp.Value, snap);   // runs Sense → hold Idle → Supervise
             else

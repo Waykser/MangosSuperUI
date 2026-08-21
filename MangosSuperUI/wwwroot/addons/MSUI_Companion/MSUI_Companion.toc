@@ -1,0 +1,9 @@
+## Interface: 11200
+## Title: MSUI Companion
+## Notes: Ability hotbar for your own characters running as party companions.
+## Author: Nico
+## Version: 0.1
+## SavedVariablesPerCharacter: MSUI_CompanionDB
+CompanionData.lua
+Core.lua
+Bars.lua

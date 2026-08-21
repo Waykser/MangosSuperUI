@@ -53,6 +53,16 @@ public class BotStateSnapshot
     // groups the god-bot formed).
     public bool InPlayerParty { get; set; } = false;
 
+    // [AUTHORSHIP] This body answers to a human, not to the brain: a real client is driving
+    // it (Possessed) or it is one of the owner's own characters enrolled with
+    // `.sui companion add` (IsCompanion). Distinct from InPlayerParty, which only says a human
+    // shares the group — a fabricated bot escorting a player is still the brain's to plan for.
+    // These two mean the brain has no authorship at all: sense, never plan. See
+    // BotBrainService.RunBrainTicksAsync.
+    public bool Possessed { get; set; } = false;
+    public bool IsCompanion { get; set; } = false;
+    public bool IsPlayerDriven => Possessed || IsCompanion;
+
     // Computed
     public float HealthPercent => MaxHealth > 0 ? Health / (float)MaxHealth : 1f;
     public float ManaPercent => MaxMana > 0 ? Mana / (float)MaxMana : 1f;
@@ -116,6 +126,8 @@ public class BotStateSnapshot
             Copper = bs.Copper,
             Durability = bs.Durability,
             InPlayerParty = bs.InPlayerParty,   // [PLAYERPARTY] pparty on STATE — needs the BotState parse in BotBridgeService
+            Possessed = bs.Possessed,           // [AUTHORSHIP] possessed on STATE
+            IsCompanion = bs.IsCompanion,       // [AUTHORSHIP] companion on STATE
             HubErrandUntil = bs.HubErrandUntil, // [HUB-ERRAND] run token — stamped by the CHAT_RECV recognizer, persists on conn.State
             PartyBossDist = bs.PartyBossDist,   // [HUB-ERRAND] ppdist on STATE — the boss-range abort guard
             ServerQuestId = bs.QuestId,

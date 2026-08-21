@@ -443,6 +443,16 @@ public sealed class BotContext
     public bool Dead { get; set; }
     public bool InPlayerParty { get; set; }                // [PLAYERPARTY] a REAL player leads this bot's group (C++ pparty; GoalSelector holds Idle on it)
 
+    // [AUTHORSHIP] This body answers to a human, not to the brain: a real client drives it
+    // (Possessed), or it is one of the owner's own characters (IsCompanion, .sui companion add).
+    // Stronger than InPlayerParty — that only says a human shares the group, and a fabricated
+    // bot escorting a player is still the brain's to plan for. These say the brain has no
+    // authorship: it senses, and nothing else. GroupCoordinator skips these too, so a companion
+    // never gets counted into a fleet group's shared objective.
+    public bool Possessed { get; set; }
+    public bool IsCompanion { get; set; }
+    public bool IsPlayerDriven => Possessed || IsCompanion;
+
     // ---- C++ held-task echo (Held-Objective build §4; refreshed each tick from STATE) ----
     // What C++ reports it is ACTUALLY running right now (mirror of m_currentTask). Unknown until the
     // C++ STATE echo lands (Session 3) — the reconcile (BotBrain) treats Unknown as "no readback →
@@ -600,6 +610,8 @@ public sealed class BotContext
         InCombat = snap.InCombat;
         Dead = snap.IsDead;
         InPlayerParty = snap.InPlayerParty;
+        Possessed = snap.Possessed;       // [AUTHORSHIP] a real client is driving this body
+        IsCompanion = snap.IsCompanion;   // [AUTHORSHIP] one of the owner's own characters
         HeldTask = snap.HeldTask;   // C++ task readback (Unknown until the Session-3 STATE echo lands)
 
         // Quest log now rides on STATE (the QUERY_QUEST_STATUS pull is retired). Set it here — on the TICK

@@ -391,6 +391,13 @@ $(function () {
         if (!s) return { text: 'IDLE', cls: 'bt-act-idle' };
         if (s.taskState === 'DISCONNECTED') return { text: 'OFFLINE', cls: 'bt-act-idle' };
 
+        // [AUTHORSHIP] A body a human is driving has no brain decision and no spine goal, by
+        // design — the brain senses it and plans nothing. Falling through would label it IDLE,
+        // which reads identically to a stalled bot and hides the one fact that matters here:
+        // it is standing still because somebody is playing it.
+        if (s.isCompanion) return { text: 'COMPANION', cls: 'bt-act-companion' };
+        if (s.possessed) return { text: 'POSSESSED', cls: 'bt-act-companion' };
+
         var brain = botBrains[guid];
         var lf = liveFleet[guid];
         var text = null;
