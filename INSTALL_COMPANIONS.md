@@ -202,8 +202,17 @@ hotbar is built from. Downloading before ever opening the page gets you an empty
 **2. Download `MSUI_Companion`** and extract it into your client's
 `Interface\AddOns\MSUI_Companion\`.
 
-**3. `/reload`** in game (or restart the client). The bar appears when a companion whose
-abilities are in the catalog joins your party.
+**3. Fully restart the game client** — exit to desktop and launch again. WoW enumerates
+`Interface\AddOns` only at launch, so a UI reload cannot discover a folder that was not
+present when the client started. Confirm it appears and is ticked under **AddOns** at the
+character-select screen.
+
+The bar appears when a companion whose abilities are in the catalog joins your party. If
+nothing shows, run **`/companion status`** in game — it reports every gate (catalog size,
+party members with and without data, bar visibility) and names the failing one.
+
+> A UI reload is only enough when *updating* an already-installed addon. If `/reload` is not
+> available on your client, `/console reloadui` is the reliable equivalent.
 
 > **Re-download after levelling.** The catalog is a snapshot of what each character knew when
 > the page was last opened. It cannot invent an ability — the server independently refuses any
@@ -293,7 +302,8 @@ Work down this list; each step depends on the ones above it.
 13. It still shows live position and health on the dashboard, badged as a companion.
 
 **Addon**
-14. `/reload` with a companion grouped — one row per companion, correct icons.
+14. With the addon installed and a companion grouped — one row per companion, correct
+    icons. `/companion status` reports the catalog size and a non-zero party count.
 15. Press an ability button **during combat** — it fires. (1.12 predates the taint model,
     which is what makes this possible at all.)
 
@@ -315,7 +325,8 @@ Either the account you're playing isn't GM level 6 (Step 4 — log out and back 
 setting it), or the rebuilt core isn't the binary that's running.
 
 **Companion joins the party but has no row on the bar**
-Its abilities aren't in the catalog. Open the Downloads page, re-download the addon, `/reload`.
+Its abilities aren't in the catalog — the addon says so in red and names the character.
+Open the Downloads page, re-download, replace the addon folder, and reload the UI.
 Check the character is on an account that exists in `realmd.account`.
 
 **The bar is empty for everyone**

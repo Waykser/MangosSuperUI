@@ -28,6 +28,18 @@ only, so re-issue it after a server restart.
 .sui companion remove <name>     -- log one out (progress is saved)
 ```
 
+**3. Install this addon**, then **fully restart the game client** — exit to desktop and
+launch again. WoW enumerates `Interface\AddOns` only at launch, so a UI reload cannot find a
+folder that was not there when the client started. Confirm it is listed and ticked under the
+**AddOns** button at the character-select screen.
+
+The bar appears when a companion whose abilities are in the catalog joins your party. If it
+does not, run **`/companion status`** — it walks every gate in order and names the one that
+is failing.
+
+> A UI reload is only enough when *updating* an addon that is already installed. If `/reload`
+> is not a command on your client, `/console reloadui` is the reliable equivalent.
+
 ## Does their progress persist?
 
 **Yes — fully.** A companion is a real character on a real account, and it saves through the
@@ -85,9 +97,6 @@ throughout, because they are your character's. Nothing on screen reflects the co
 **For anything structural — moving items, equipping gear, training, quests — remove the
 companion and log into it with a real WoW client on its own account.** It's a real character,
 so everything behaves normally. Re-enrol when you're done.
-
-**3. Install this addon**, then `/reload`. The bar appears when a companion whose
-abilities are in the catalog joins your party.
 
 ## Using the bar
 
