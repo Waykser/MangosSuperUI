@@ -1,0 +1,9 @@
+## Interface: 11200
+## Title: MSUI Bot Bar
+## Notes: Browse a grouped bot's spellbook and order casts from an action bar.
+## Author: MangosSuperUI
+## Version: 0.1
+## SavedVariablesPerCharacter: MSUI_BotBarDB
+Core.lua
+MSUI_BotSpellsData.lua
+UI.lua
