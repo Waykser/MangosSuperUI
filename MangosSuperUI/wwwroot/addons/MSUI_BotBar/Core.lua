@@ -23,10 +23,20 @@
 
 MSUI_BotBar = MSUI_BotBar or {}
 MSUI_BotBarDB = MSUI_BotBarDB or {}
+-- Panel settings live in their own saved variable rather than a reserved key in
+-- MSUI_BotBarDB, which is keyed by bot name and would otherwise need a migration.
+MSUI_BotBarConfig = MSUI_BotBarConfig or {}
 
 local B = MSUI_BotBar
 
-B.NUM_SLOTS = 12
+-- The bar is a grid: SLOTS_PER_ROW wide, 1..MAX_ROWS tall. Every slot button is
+-- built once at MAX_ROWS and simply hidden above the current row count, so adding
+-- a row costs nothing at runtime and slots keep their contents when a row is
+-- removed and put back.
+B.SLOTS_PER_ROW = 12
+B.MIN_ROWS = 1
+B.MAX_ROWS = 4
+B.MAX_SLOTS = B.SLOTS_PER_ROW * B.MAX_ROWS
 B.SEND_GAP = 0.6      -- seconds between commands; the server throttles at 0.4
 B.LIST_TIMEOUT = 6
 
@@ -216,6 +226,83 @@ end
 -- Slot storage (per character, keyed by bot name)
 -- ============================================================
 
+-- ---------- Panel settings ----------
+
+function B.Rows()
+    local n = MSUI_BotBarConfig.rows
+    if not n or n < B.MIN_ROWS then n = 2 end
+    if n > B.MAX_ROWS then n = B.MAX_ROWS end
+    return n
+end
+
+function B.NumSlots()
+    return B.Rows() * B.SLOTS_PER_ROW
+end
+
+-- delta is +1 / -1. Slots on a removed row are deliberately left in the DB so
+-- that adding the row back restores what was on it.
+function B.AddRows(delta)
+    local n = B.Rows() + delta
+    if n < B.MIN_ROWS then n = B.MIN_ROWS end
+    if n > B.MAX_ROWS then n = B.MAX_ROWS end
+    MSUI_BotBarConfig.rows = n
+    if B.Relayout then B.Relayout() end
+    if B.RefreshUI then B.RefreshUI() end
+    return n
+end
+
+function B.SetRows(n)
+    n = tonumber(n)
+    if not n then return B.Rows() end
+    return B.AddRows(n - B.Rows())
+end
+
+function B.Collapsed()
+    if MSUI_BotBarConfig.collapsed then return true end
+    return false
+end
+
+function B.ToggleCollapsed()
+    if B.Collapsed() then
+        MSUI_BotBarConfig.collapsed = nil
+    else
+        MSUI_BotBarConfig.collapsed = true
+    end
+    if B.Relayout then B.Relayout() end
+    if B.RefreshUI then B.RefreshUI() end
+end
+
+-- Bot selection has to stay reachable with the spellbook hidden, so the panel
+-- offers a cycler as well as the tab column.
+function B.CycleBot(delta)
+    local names = {}
+    local name, rec
+    for name, rec in pairs(B.bots) do
+        if rec.state ~= "notbot" then table.insert(names, name) end
+    end
+    table.sort(names)
+
+    local count = table.getn(names)
+    if count == 0 then return end
+
+    local idx = 1
+    local i
+    for i = 1, count do
+        if names[i] == B.selected then idx = i break end
+    end
+
+    idx = idx + delta
+    if idx < 1 then idx = count end
+    if idx > count then idx = 1 end
+
+    B.selected = names[idx]
+    B.carried = nil
+    if B.bots[B.selected] and B.bots[B.selected].state == "unknown" then
+        B.Enqueue(B.selected)
+    end
+    if B.RefreshUI then B.RefreshUI() end
+end
+
 function B.Slots(botName)
     if not botName then return {} end
     if not MSUI_BotBarDB[botName] then MSUI_BotBarDB[botName] = {} end
@@ -356,10 +443,20 @@ local bus = CreateFrame("Frame", "MSUI_BotBarBus")
 bus:RegisterEvent("CHAT_MSG_SYSTEM")
 bus:RegisterEvent("PARTY_MEMBERS_CHANGED")
 bus:RegisterEvent("PLAYER_ENTERING_WORLD")
+bus:RegisterEvent("ADDON_LOADED")
 
 bus:SetScript("OnEvent", function()
     if event == "CHAT_MSG_SYSTEM" then
         B.OnSystem(arg1)
+
+    elseif event == "ADDON_LOADED" then
+        -- First point at which MSUI_BotBarConfig actually holds the saved values:
+        -- SavedVariables are applied after every file in the addon has run, so the
+        -- row count and collapsed state can only be applied from here.
+        if arg1 == "MSUI_BotBar" and B.Relayout then
+            B.Relayout()
+        end
+
     else
         B.ScanParty()
     end
@@ -404,11 +501,30 @@ SlashCmdList["MSUIBOTBAR"] = function(msg)
         if rest == "" then rest = B.selected end
         B.Stop(rest)
 
+    elseif cmd == "collapse" or cmd == "expand" or cmd == "book" then
+        B.ToggleCollapsed()
+
+    elseif cmd == "rows" then
+        if rest == "" then
+            B.Print("Bar is " .. B.Rows() .. " row(s). /botbar rows <" .. B.MIN_ROWS
+                .. "-" .. B.MAX_ROWS .. ">")
+        else
+            local n = tonumber(rest)
+            if not n then
+                B.Error("Usage: /botbar rows <" .. B.MIN_ROWS .. "-" .. B.MAX_ROWS .. ">")
+            else
+                B.Print("Bar set to " .. B.SetRows(n) .. " row(s).")
+            end
+        end
+
     else
-        B.Print("/botbar          toggle the panel")
-        B.Print("/botbar refresh  re-read the selected bot's spellbook")
-        B.Print("/botbar scan     re-scan the whole party")
-        B.Print("/botbar stop     cancel the bot's pending cast order")
+        B.Print("/botbar           toggle the panel")
+        B.Print("/botbar collapse  hide or show the spellbook")
+        B.Print("/botbar rows <n>  set the number of slot rows (" .. B.MIN_ROWS
+            .. "-" .. B.MAX_ROWS .. ")")
+        B.Print("/botbar refresh   re-read the selected bot's spellbook")
+        B.Print("/botbar scan      re-scan the whole party")
+        B.Print("/botbar stop      cancel the bot's pending cast order")
         B.Print("Click a slot to cast. Shift = at you, Ctrl = at the pack, Alt = at the bot's target.")
     end
 end

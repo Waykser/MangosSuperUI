@@ -8,6 +8,21 @@ up, then click a slot on the bar to place it there. Click the slot to make the
 bot cast it. Right-click a slot to clear it. Slots are saved per character, per
 bot.
 
+## Collapsing and resizing the bar
+
+**Hide Book** collapses the panel down to just the bar, which is what you want
+once the slots are set up — a 2-row bar goes from 392px tall to 170px. The
+spellbook, the tab column and the scroll list all go away; **Show Book** brings
+them back. Because the tabs are part of what gets hidden, the `<` and `>` buttons
+in the control row cycle the selected bot and work in either mode.
+
+**− / +** change the number of slot rows, from 1 to 4 (12 to 48 slots). Rows are
+added upward, so the existing bottom row never moves under your cursor. Removing
+a row does not erase what was on it — put the row back and the slots return.
+
+Both settings are saved per character. `/botbar collapse` and `/botbar rows <n>`
+do the same things from chat.
+
 ## Where the spell lands
 
 Vanilla 1.12 has no way for an addon to read world coordinates from a mouse
@@ -50,8 +65,8 @@ stop` (or the Stop button) drops a pending order early.
 
 | File | |
 | --- | --- |
-| `Core.lua` | transport, spellbook cache, server response parsing |
-| `UI.lua` | the panel, the list, the bar |
+| `Core.lua` | transport, spellbook cache, server response parsing, panel settings |
+| `UI.lua` | the panel, the list, the bar, layout |
 | `MSUI_BotSpellsData.lua` | **generated** — spell names, icons, ground flags |
 
 `MSUI_BotSpellsData.lua` is rewritten by MangosSuperUI every time the Downloads
@@ -71,3 +86,13 @@ If it is missing or stale the addon still works — spells just show as
 ```
 
 You can type these by hand; the addon is only a convenience layer over them.
+
+## Saved variables
+
+| | |
+| --- | --- |
+| `MSUI_BotBarDB` | `[botName] = { [slotIndex] = spellId }` |
+| `MSUI_BotBarConfig` | `{ rows = n, collapsed = true/nil }` |
+
+Kept separate because `MSUI_BotBarDB` is keyed by bot name, and folding settings
+into it would mean reserving a key that a character could in principle be called.

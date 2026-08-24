@@ -14,11 +14,24 @@
 local B = MSUI_BotBar
 
 local PANEL_W = 420
-local PANEL_H = 400
 local ROW_H = 18
 local ROWS = 12
 local SLOT_SIZE = 30
+local SLOT_GAP = 2
 local TAB_H = 20
+
+-- Vertical layout, all measured in the direction the anchor runs.
+--
+-- The panel height is COMPUTED, never fixed: it has to track both the row count
+-- and whether the spellbook is collapsed. Everything above the bar anchors to the
+-- top, the bar anchors to the bottom, so getting the height right is the whole of
+-- the layout work.
+local HEADER_H   = 76     -- top edge down to below the control row
+local LIST_TOP   = -74    -- spellbook / tab column start
+local LIST_H     = ROWS * ROW_H + 8
+local LIST_SPAN  = -LIST_TOP + LIST_H   -- top edge down to the bottom of the list
+local BAR_BOTTOM = 22     -- bottom edge of the lowest slot row
+local BAR_CLEAR  = 10     -- breathing room between the bar and whatever is above it
 
 B.carried = nil          -- spellId armed for the next slot click
 B.flash = {}             -- [spellId] = { expires = t, kind = "ok"|"fail"|"sent" }
@@ -29,7 +42,7 @@ B.flash = {}             -- [spellId] = { expires = t, kind = "ok"|"fail"|"sent"
 
 local f = CreateFrame("Frame", "MSUI_BotBarFrame", UIParent)
 f:SetWidth(PANEL_W)
-f:SetHeight(PANEL_H)
+f:SetHeight(400)          -- placeholder; B.Relayout computes the real height
 f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 f:SetMovable(true)
 f:EnableMouse(true)
@@ -73,6 +86,58 @@ stopBtn:SetPoint("LEFT", refresh, "RIGHT", 4, 0)
 stopBtn:SetText("Stop")
 stopBtn:SetScript("OnClick", function() B.Stop(B.selected) end)
 
+-- ---------- Control row ----------
+-- Sits on its own line under the title so it cannot collide with the centred
+-- heading, and stays visible when the spellbook is collapsed.
+
+local collapseBtn = CreateFrame("Button", "MSUI_BotBarCollapse", f, "UIPanelButtonTemplate")
+collapseBtn:SetWidth(86)
+collapseBtn:SetHeight(20)
+collapseBtn:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -48)
+collapseBtn:SetText("Hide Book")
+collapseBtn:SetScript("OnClick", function() B.ToggleCollapsed() end)
+f.collapseBtn = collapseBtn
+
+-- Bot selection has to survive the tab column being hidden, so the cycler is
+-- the collapsed-mode way to change bots. It is useful expanded too, so it is
+-- always shown rather than swapped in and out.
+local prevBot = CreateFrame("Button", "MSUI_BotBarPrev", f, "UIPanelButtonTemplate")
+prevBot:SetWidth(24)
+prevBot:SetHeight(20)
+prevBot:SetPoint("LEFT", collapseBtn, "RIGHT", 6, 0)
+prevBot:SetText("<")
+prevBot:SetScript("OnClick", function() B.CycleBot(-1) end)
+
+local nextBot = CreateFrame("Button", "MSUI_BotBarNext", f, "UIPanelButtonTemplate")
+nextBot:SetWidth(24)
+nextBot:SetHeight(20)
+nextBot:SetPoint("LEFT", prevBot, "RIGHT", 2, 0)
+nextBot:SetText(">")
+nextBot:SetScript("OnClick", function() B.CycleBot(1) end)
+
+local rowMinus = CreateFrame("Button", "MSUI_BotBarRowMinus", f, "UIPanelButtonTemplate")
+rowMinus:SetWidth(24)
+rowMinus:SetHeight(20)
+rowMinus:SetPoint("LEFT", nextBot, "RIGHT", 12, 0)
+rowMinus:SetText("-")
+rowMinus:SetScript("OnClick", function() B.AddRows(-1) end)
+
+local rowsLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+rowsLabel:SetWidth(46)
+rowsLabel:SetHeight(20)
+rowsLabel:SetJustifyH("CENTER")
+rowsLabel:SetPoint("LEFT", rowMinus, "RIGHT", 2, 0)
+f.rowsLabel = rowsLabel
+
+local rowPlus = CreateFrame("Button", "MSUI_BotBarRowPlus", f, "UIPanelButtonTemplate")
+rowPlus:SetWidth(24)
+rowPlus:SetHeight(20)
+rowPlus:SetPoint("LEFT", rowsLabel, "RIGHT", 2, 0)
+rowPlus:SetText("+")
+rowPlus:SetScript("OnClick", function() B.AddRows(1) end)
+f.rowMinus = rowMinus
+f.rowPlus = rowPlus
+
 -- ---------- Bot tabs (left column) ----------
 
 f.tabs = {}
@@ -81,7 +146,7 @@ for i = 1, 5 do
     local tab = CreateFrame("Button", nil, f)
     tab:SetWidth(96)
     tab:SetHeight(TAB_H)
-    tab:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -56 - (i - 1) * (TAB_H + 2))
+    tab:SetPoint("TOPLEFT", f, "TOPLEFT", 16, (LIST_TOP - 2) - (i - 1) * (TAB_H + 2))
 
     tab.bg = tab:CreateTexture(nil, "BACKGROUND")
     tab.bg:SetAllPoints(tab)
@@ -109,8 +174,8 @@ end
 
 local listBg = CreateFrame("Frame", nil, f)
 listBg:SetWidth(258)
-listBg:SetHeight(ROWS * ROW_H + 8)
-listBg:SetPoint("TOPLEFT", f, "TOPLEFT", 120, -54)
+listBg:SetHeight(LIST_H)
+listBg:SetPoint("TOPLEFT", f, "TOPLEFT", 120, LIST_TOP)
 listBg:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -182,12 +247,22 @@ end
 
 -- ---------- The bar ----------
 
+-- Every slot for MAX_ROWS is built up front and hidden above the current row
+-- count. Creating frames on demand would work too, but this way a slot keeps its
+-- contents and its scripts when a row is removed and added back.
 f.slots = {}
-for i = 1, B.NUM_SLOTS do
+for i = 1, B.MAX_SLOTS do
     local slot = CreateFrame("Button", "MSUI_BotBarSlot" .. i, f)
     slot:SetWidth(SLOT_SIZE)
     slot:SetHeight(SLOT_SIZE)
-    slot:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 16 + (i - 1) * (SLOT_SIZE + 2), 20)
+
+    -- Row 1 is the BOTTOM row, so adding a row grows the bar upward and the
+    -- existing slots never move under the player's cursor.
+    local row = math.floor((i - 1) / B.SLOTS_PER_ROW) + 1
+    local col = math.mod(i - 1, B.SLOTS_PER_ROW) + 1
+    slot:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT",
+        16 + (col - 1) * (SLOT_SIZE + SLOT_GAP),
+        BAR_BOTTOM + (row - 1) * (SLOT_SIZE + SLOT_GAP))
     slot.index = i
 
     slot.bg = slot:CreateTexture(nil, "BACKGROUND")
@@ -293,12 +368,14 @@ function B.RefreshUI()
 
     local names = SortedBotNames()
 
-    -- Tabs
+    -- Tabs. Hidden wholesale while collapsed -- the cycler in the control row is
+    -- how bots are selected in that mode.
+    local collapsed = B.Collapsed()
     local i
     for i = 1, 5 do
         local tab = f.tabs[i]
         local name = names[i]
-        if name then
+        if name and not collapsed then
             local rec = B.bots[name]
             tab.botName = name
             local suffix = ""
@@ -364,7 +441,7 @@ function B.RefreshUI()
     -- Bar
     local slots = B.Slots(B.selected)
     local now = GetTime()
-    for i = 1, B.NUM_SLOTS do
+    for i = 1, B.NumSlots() do
         local slot = f.slots[i]
         local id = slots[i]
         if id then
@@ -393,6 +470,8 @@ function B.RefreshUI()
     if B.carried then
         local n = B.SpellInfo(B.carried)
         f.hint:SetText("Carrying |cff66ff66" .. n .. "|r  -  click a slot to place it")
+    elseif collapsed then
+        f.hint:SetText("Shift/Ctrl/Alt-click a slot to change where it lands.  < > switches bot.")
     else
         f.hint:SetText("* = ground targeted.  Shift/Ctrl/Alt-click a slot to change where it lands.")
     end
@@ -425,6 +504,62 @@ f:SetScript("OnUpdate", function()
 end)
 
 -- ============================================================
+-- Relayout
+--
+-- Applies the row count and the collapsed state: shows the right number of
+-- slots, shows or hides the spellbook, and recomputes the panel height. Called
+-- whenever either setting changes, and once on load.
+-- ============================================================
+
+-- Resizing a CENTER-anchored frame moves both edges, which would shift the bar
+-- out from under the cursor every time a row is added or the book is collapsed.
+-- Re-anchoring to the bottom-left afterwards keeps the bar where it was, which is
+-- the part the player is actually looking at.
+local function SetHeightKeepingBottom(newH)
+    local left, bottom = f:GetLeft(), f:GetBottom()
+    f:SetHeight(newH)
+    if left and bottom then
+        f:ClearAllPoints()
+        f:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
+    end
+end
+
+function B.Relayout()
+    local rows = B.Rows()
+    local collapsed = B.Collapsed()
+    local shown = rows * B.SLOTS_PER_ROW
+
+    local i
+    for i = 1, B.MAX_SLOTS do
+        if i <= shown then f.slots[i]:Show() else f.slots[i]:Hide() end
+    end
+
+    -- Top edge of the highest slot row, measured from the frame's bottom.
+    local barTop = BAR_BOTTOM + rows * (SLOT_SIZE + SLOT_GAP) - SLOT_GAP
+
+    if collapsed then
+        listBg:Hide()
+        for i = 1, 5 do f.tabs[i]:Hide() end
+        f.collapseBtn:SetText("Show Book")
+        SetHeightKeepingBottom(HEADER_H + BAR_CLEAR + barTop)
+    else
+        listBg:Show()
+        f.collapseBtn:SetText("Hide Book")
+        SetHeightKeepingBottom(LIST_SPAN + BAR_CLEAR + barTop)
+    end
+
+    if rows == 1 then
+        f.rowsLabel:SetText("1 row")
+    else
+        f.rowsLabel:SetText(rows .. " rows")
+    end
+
+    -- Grey the end stops rather than letting a click do nothing silently.
+    if rows <= B.MIN_ROWS then f.rowMinus:Disable() else f.rowMinus:Enable() end
+    if rows >= B.MAX_ROWS then f.rowPlus:Disable() else f.rowPlus:Enable() end
+end
+
+-- ============================================================
 -- Toggle
 -- ============================================================
 
@@ -433,7 +568,13 @@ function B.Toggle()
         f:Hide()
     else
         f:Show()
+        B.Relayout()
         B.ScanParty()
         B.RefreshUI()
     end
 end
+
+-- NOTE: Relayout is deliberately NOT called here. SavedVariables are not populated
+-- until after every file in the addon has executed, so a file-scope call would read
+-- the defaults and the player's saved row count / collapsed state would be lost.
+-- Core.lua drives it from ADDON_LOADED instead.
